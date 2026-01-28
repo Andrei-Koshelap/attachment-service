@@ -1,0 +1,66 @@
+declaration:
+  call: declare
+  version: 0.1
+  description: "Complete multipart upload and trigger AV scan"
+  method: post
+  accepts: json
+  returns: json
+  namespace: attachments
+
+allowlist:
+  body:
+    - field: attachmentId
+      type: string
+    - field: parts
+      type: array
+    - field: checksumSha256
+      type: string
+
+loadMeta:
+  call: http.get
+  args:
+    url: "${RESQL_URL}/attachments/get?id=${incoming.body.attachmentId}"
+  result: meta
+  next: guardStatus
+
+guardStatus:
+  switch:
+    - condition: "${meta.response.body.status} != 'PENDING_UPLOAD'"
+      next: returnConflict
+  next: completeMultipart
+
+completeMultipart:
+  call: http.post
+  args:
+    url: "${S3_FERRY_URL}/multipart/complete"
+    body:
+      objectKey: "${meta.response.body.object_key}"
+      uploadId: "${meta.response.body.upload_id}"
+      parts: "${incoming.body.parts}"
+  next: markUploaded
+
+markUploaded:
+  call: http.post
+  args:
+    url: "${RESQL_URL}/attachments/mark_uploaded"
+    body:
+      id: "${incoming.body.attachmentId}"
+      checksumSha256: "${incoming.body.checksumSha256}"
+  next: triggerScan
+
+triggerScan:
+  call: http.post
+  args:
+    url: "${SCANNER_API_URL}/scan"
+    body:
+      attachmentId: "${incoming.body.attachmentId}"
+  next: returnOk
+
+returnOk:
+  return: { status: "SCAN_QUEUED" }
+  next: end
+
+returnConflict:
+  status: 409
+  return: { error: "INVALID_STATUS" }
+  next: end

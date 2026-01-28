@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: attachment-scanner
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: attachment-scanner
+  template:
+    metadata:
+      labels:
+        app: attachment-scanner
+    spec:
+      containers:
+        - name: clamav
+          image: clamav/clamav:latest
+          ports:
+            - containerPort: 3310
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+        - name: scanner-api
+          image: your-registry/scanner-api:1.0.0
+          envFrom:
+            - secretRef:
+                name: attachments-secrets
+          env:
+            - name: CLAMAV_HOST
+              value: "127.0.0.1"
+            - name: CLAMAV_PORT
+              value: "3310"
+          ports:
+            - containerPort: 8080

@@ -1,0 +1,82 @@
+declaration:
+  call: declare
+  version: 0.1
+  description: "Init attachment upload (returns presigned urls)"
+  method: post
+  accepts: json
+  returns: json
+  namespace: attachments
+
+# 1) Allowlist sisendile (minimeeri attack surface)
+allowlist:
+  body:
+    - field: filename
+      type: string
+    - field: contentType
+      type: string
+    - field: size
+      type: integer
+    - field: purpose
+      type: string
+
+# 2) Basic validation + flow-limits (kontseptuaalne; rate-limit võib tulla gateway konfiguratsioonist)
+validate:
+  switch:
+    - condition: "${incoming.body.size} > 104857600"   # 100MB
+      next: returnTooLarge
+    - condition: "${incoming.body.contentType} not_in ['application/pdf','image/png','image/jpeg']"
+      next: returnUnsupported
+  next: createMetadata
+
+createMetadata:
+  call: http.post
+  args:
+    url: "${RESQL_URL}/attachments/create"
+    body:
+      filename: "${incoming.body.filename}"
+      declared_content_type: "${incoming.body.contentType}"
+      declared_size: "${incoming.body.size}"
+      purpose: "${incoming.body.purpose}"
+      status: "PENDING_UPLOAD"
+  result: meta
+  next: initMultipart
+
+initMultipart:
+  call: http.post
+  args:
+    url: "${S3_FERRY_URL}/multipart/init"
+    body:
+      objectKey: "${meta.response.body.object_key}"
+      contentType: "${incoming.body.contentType}"
+      size: "${incoming.body.size}"
+  result: s3
+  next: persistUploadId
+
+persistUploadId:
+  call: http.post
+  args:
+    url: "${RESQL_URL}/attachments/set_upload"
+    body:
+      id: "${meta.response.body.id}"
+      uploadId: "${s3.response.body.uploadId}"
+  next: returnInit
+
+returnInit:
+  return:
+    attachmentId: "${meta.response.body.id}"
+    objectKey: "${meta.response.body.object_key}"
+    upload:
+      uploadId: "${s3.response.body.uploadId}"
+      partUrls: "${s3.response.body.partUrls}"
+      expiresInSeconds: "${s3.response.body.expiresIn}"
+  next: end
+
+returnTooLarge:
+  status: 413
+  return: { error: "FILE_TOO_LARGE" }
+  next: end
+
+returnUnsupported:
+  status: 415
+  return: { error: "UNSUPPORTED_MEDIA_TYPE" }
+  next: end
