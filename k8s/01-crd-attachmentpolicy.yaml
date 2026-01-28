@@ -1,0 +1,56 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: attachmentpolicies.attachments.demo
+spec:
+  group: attachments.demo
+  scope: Namespaced
+  names:
+    plural: attachmentpolicies
+    singular: attachmentpolicy
+    kind: AttachmentPolicy
+    shortNames:
+      - ap
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                maxFileSizeMb:
+                  type: integer
+                  minimum: 1
+                allowedMimeTypes:
+                  type: array
+                  items:
+                    type: string
+                presign:
+                  type: object
+                  properties:
+                    uploadTtlSeconds:
+                      type: integer
+                      minimum: 60
+                    downloadTtlSeconds:
+                      type: integer
+                      minimum: 60
+                limits:
+                  type: object
+                  properties:
+                    maxUploadsPerUserPerMinute:
+                      type: integer
+                      minimum: 1
+                    maxActiveUploadsPerUser:
+                      type: integer
+                      minimum: 1
+                behavior:
+                  type: object
+                  properties:
+                    notifyOnInfected:
+                      type: boolean
+                    notifyOnClean:
+                      type: boolean

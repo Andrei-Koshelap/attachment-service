@@ -1,0 +1,559 @@
+# k8s-demo.yaml (ALL-IN-ONE)
+# Namespace: attachments-demo
+# Components: Postgres, MinIO (+ bucket init Job), ClamAV, TIM (Keycloak),
+#            mail-sender (+ SMTP Secret), Attachment Service, Ruuter (DSL gateway),
+#            CRD + CR: AttachmentPolicy
+#
+# Replace images:
+# - ruuter:dev
+# - ttachment-service:dev
+# - ymail-sender:dev
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: attachments-demo
+
+# -------------------------
+# CRD: AttachmentPolicy
+# -------------------------
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: attachmentpolicies.attachments.demo
+spec:
+  group: attachments.demo
+  scope: Namespaced
+  names:
+    plural: attachmentpolicies
+    singular: attachmentpolicy
+    kind: AttachmentPolicy
+    shortNames:
+      - ap
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                maxFileSizeMb:
+                  type: integer
+                  minimum: 1
+                allowedMimeTypes:
+                  type: array
+                  items:
+                    type: string
+                presign:
+                  type: object
+                  properties:
+                    uploadTtlSeconds:
+                      type: integer
+                      minimum: 60
+                    downloadTtlSeconds:
+                      type: integer
+                      minimum: 60
+                limits:
+                  type: object
+                  properties:
+                    maxUploadsPerUserPerMinute:
+                      type: integer
+                      minimum: 1
+                    maxActiveUploadsPerUser:
+                      type: integer
+                      minimum: 1
+                behavior:
+                  type: object
+                  properties:
+                    notifyOnInfected:
+                      type: boolean
+                    notifyOnClean:
+                      type: boolean
+
+# -------------------------
+# Secrets
+# -------------------------
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: demo-secrets
+  namespace: attachments-demo
+type: Opaque
+stringData:
+  # Postgres
+  POSTGRES_DB: app
+  POSTGRES_USER: app
+  POSTGRES_PASSWORD: app
+
+  # MinIO
+  MINIO_ROOT_USER: minio
+  MINIO_ROOT_PASSWORD: minio12345
+
+  # Keycloak
+  KEYCLOAK_ADMIN: admin
+  KEYCLOAK_ADMIN_PASSWORD: admin
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: smtp-secret
+  namespace: attachments-demo
+type: Opaque
+stringData:
+  SMTP_HOST: "smtp.example.com"
+  SMTP_PORT: "587"
+  SMTP_USER: "mailer@example.com"
+  SMTP_PASS: "CHANGE_ME"
+  SMTP_FROM: "no-reply@example.com"
+
+# -------------------------
+# AttachmentPolicy (CR)
+# -------------------------
+---
+apiVersion: attachments.demo/v1alpha1
+kind: AttachmentPolicy
+metadata:
+  name: default-attachment-policy
+  namespace: attachments-demo
+spec:
+  maxFileSizeMb: 100
+  allowedMimeTypes:
+    - application/pdf
+    - image/png
+    - image/jpeg
+  presign:
+    uploadTtlSeconds: 300
+    downloadTtlSeconds: 180
+  limits:
+    maxUploadsPerUserPerMinute: 20
+    maxActiveUploadsPerUser: 5
+  behavior:
+    notifyOnClean: true
+    notifyOnInfected: true
+
+# -------------------------
+# Postgres
+# -------------------------
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pg-data
+  namespace: attachments-demo
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 2Gi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: attachments-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: postgres }
+  template:
+    metadata:
+      labels: { app: postgres }
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              valueFrom: { secretKeyRef: { name: demo-secrets, key: POSTGRES_DB } }
+            - name: POSTGRES_USER
+              valueFrom: { secretKeyRef: { name: demo-secrets, key: POSTGRES_USER } }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: demo-secrets, key: POSTGRES_PASSWORD } }
+          volumeMounts:
+            - name: pg-data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: pg-data
+          persistentVolumeClaim: { claimName: pg-data }
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: attachments-demo
+spec:
+  selector: { app: postgres }
+  ports:
+    - name: pg
+      port: 5432
+      targetPort: 5432
+
+# -------------------------
+# MinIO (S3-compatible)
+# -------------------------
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-data
+  namespace: attachments-demo
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: attachments-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: minio }
+  template:
+    metadata:
+      labels: { app: minio }
+    spec:
+      containers:
+        - name: minio
+          image: minio/minio:latest
+          args: ["server", "/data", "--console-address", ":9001"]
+          ports:
+            - containerPort: 9000
+            - containerPort: 9001
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom: { secretKeyRef: { name: demo-secrets, key: MINIO_ROOT_USER } }
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom: { secretKeyRef: { name: demo-secrets, key: MINIO_ROOT_PASSWORD } }
+          volumeMounts:
+            - name: minio-data
+              mountPath: /data
+      volumes:
+        - name: minio-data
+          persistentVolumeClaim: { claimName: minio-data }
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: attachments-demo
+spec:
+  selector: { app: minio }
+  ports:
+    - name: s3
+      port: 9000
+      targetPort: 9000
+    - name: console
+      port: 9001
+      targetPort: 9001
+
+---
+# Create bucket "attachments" and disable anonymous access.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-init-bucket
+  namespace: attachments-demo
+spec:
+  backoffLimit: 10
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: mc
+          image: minio/mc:latest
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom: { secretKeyRef: { name: demo-secrets, key: MINIO_ROOT_USER } }
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom: { secretKeyRef: { name: demo-secrets, key: MINIO_ROOT_PASSWORD } }
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "Waiting for MinIO..."
+              until mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null 2>&1; do
+                sleep 2
+              done
+              mc mb -p local/attachments || true
+              mc anonymous set none local/attachments || true
+              echo "MinIO bucket initialized: attachments"
+
+# -------------------------
+# ClamAV (clamd)
+# -------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clamav
+  namespace: attachments-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: clamav }
+  template:
+    metadata:
+      labels: { app: clamav }
+    spec:
+      containers:
+        - name: clamav
+          image: clamav/clamav:latest
+          ports:
+            - containerPort: 3310
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clamav
+  namespace: attachments-demo
+spec:
+  selector: { app: clamav }
+  ports:
+    - name: clamd
+      port: 3310
+      targetPort: 3310
+
+# -------------------------
+# TIM (Keycloak)
+# -------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tim
+  namespace: attachments-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: tim }
+  template:
+    metadata:
+      labels: { app: tim }
+    spec:
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:25.0
+          args: ["start-dev", "--http-port=8080"]
+          ports:
+            - containerPort: 8080
+          env:
+            - name: KEYCLOAK_ADMIN
+              valueFrom: { secretKeyRef: { name: demo-secrets, key: KEYCLOAK_ADMIN } }
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              valueFrom: { secretKeyRef: { name: demo-secrets, key: KEYCLOAK_ADMIN_PASSWORD } }
+            - name: KC_HOSTNAME_STRICT
+              value: "false"
+            - name: KC_HTTP_ENABLED
+              value: "true"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tim
+  namespace: attachments-demo
+spec:
+  selector: { app: tim }
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+
+# -------------------------
+# mail-sender (SMTP notifications)
+# -------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mail-sender
+  namespace: attachments-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: mail-sender }
+  template:
+    metadata:
+      labels: { app: mail-sender }
+    spec:
+      containers:
+        - name: mail-sender
+          image: mail-sender:dev
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef:
+                name: smtp-secret
+          ports:
+            - containerPort: 8080
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mail-sender
+  namespace: attachments-demo
+spec:
+  selector: { app: mail-sender }
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+
+# -------------------------
+# Attachment Service (Spring Boot)
+# -------------------------
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: attachment-service
+  namespace: attachments-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: attachment-service }
+  template:
+    metadata:
+      labels: { app: attachment-service }
+    spec:
+      containers:
+        - name: app
+          image: attachment-service:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          env:
+            # DB
+            - name: SPRING_DATASOURCE_URL
+              value: jdbc:postgresql://postgres:5432/app
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom: { secretKeyRef: { name: demo-secrets, key: POSTGRES_USER } }
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom: { secretKeyRef: { name: demo-secrets, key: POSTGRES_PASSWORD } }
+
+            # S3
+            - name: APP_S3_ENDPOINT
+              value: http://minio:9000
+            - name: APP_S3_REGION
+              value: us-east-1
+            - name: APP_S3_BUCKET
+              value: attachments
+            - name: APP_S3_ACCESS_KEY
+              valueFrom: { secretKeyRef: { name: demo-secrets, key: MINIO_ROOT_USER } }
+            - name: APP_S3_SECRET_KEY
+              valueFrom: { secretKeyRef: { name: demo-secrets, key: MINIO_ROOT_PASSWORD } }
+
+            # ClamAV
+            - name: APP_CLAMAV_HOST
+              value: clamav
+            - name: APP_CLAMAV_PORT
+              value: "3310"
+
+            # JWT issuer
+            - name: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI
+              value: http://tim:8080/realms/dev
+
+            # mail-sender integration (optional)
+            - name: APP_MAIL_SENDER_URL
+              value: http://mail-sender:8080
+
+            # Policy integration (prototype approach)
+            # Your service may read CR via K8s API, or via mounted config produced by controller.
+            - name: APP_POLICY_NAME
+              value: default-attachment-policy
+            - name: APP_POLICY_NAMESPACE
+              value: attachments-demo
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: attachment-service
+  namespace: attachments-demo
+spec:
+  selector: { app: attachment-service }
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+
+# -------------------------
+# Ruuter (DSL gateway) + ConfigMap placeholder
+# -------------------------
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ruuter-config
+  namespace: attachments-demo
+data:
+  application.yml: |
+    tim:
+      issuer: "http://tim:8080/realms/dev"
+    downstream:
+      attachmentServiceUrl: "http://attachment-service:8080"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ruuter
+  namespace: attachments-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: ruuter }
+  template:
+    metadata:
+      labels: { app: ruuter }
+    spec:
+      containers:
+        - name: ruuter
+          image: ruuter:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          env:
+            - name: TIM_ISSUER
+              value: http://tim:8080/realms/dev
+          volumeMounts:
+            - name: ruuter-config
+              mountPath: /app/conf
+              readOnly: true
+      volumes:
+        - name: ruuter-config
+          configMap:
+            name: ruuter-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ruuter
+  namespace: attachments-demo
+spec:
+  selector: { app: ruuter }
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

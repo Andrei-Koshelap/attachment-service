@@ -1,0 +1,56 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ruuter-config
+  namespace: attachments-demo
+data:
+  application.yml: |
+    tim:
+      issuer: "http://tim:8080/realms/dev"
+    downstream:
+      attachmentServiceUrl: "http://attachment-service:8080"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ruuter
+  namespace: attachments-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: ruuter }
+  template:
+    metadata:
+      labels: { app: ruuter }
+    spec:
+      containers:
+        - name: ruuter
+          image: ruuter:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          env:
+            - name: TIM_ISSUER
+              value: http://tim:8080/realms/dev
+          volumeMounts:
+            - name: ruuter-config
+              mountPath: /app/conf
+              readOnly: true
+      volumes:
+        - name: ruuter-config
+          configMap:
+            name: ruuter-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ruuter
+  namespace: attachments-demo
+spec:
+  selector: { app: ruuter }
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

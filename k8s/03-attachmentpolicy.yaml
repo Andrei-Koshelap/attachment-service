@@ -1,0 +1,24 @@
+apiVersion: attachments.demo/v1alpha1
+kind: AttachmentPolicy
+metadata:
+  name: default-attachment-policy
+  namespace: attachments-demo
+spec:
+  maxFileSizeMb: 100
+
+  allowedMimeTypes:
+    - application/pdf
+    - image/png
+    - image/jpeg
+
+  presign:
+    uploadTtlSeconds: 300
+    downloadTtlSeconds: 180
+
+  limits:
+    maxUploadsPerUserPerMinute: 20
+    maxActiveUploadsPerUser: 5
+
+  behavior:
+    notifyOnClean: true
+    notifyOnInfected: true

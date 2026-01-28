@@ -1,3 +1,9 @@
 spring:
   application:
-    name: uploader
+    name: attachment-service
+app:
+  policy:
+    enabled: true
+    namespace: attachments-demo
+    name: default-attachment-policy
+    refresh-ms: 30000

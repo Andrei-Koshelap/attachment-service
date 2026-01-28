@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tim
+  namespace: attachments-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: tim }
+  template:
+    metadata:
+      labels: { app: tim }
+    spec:
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:25.0
+          args: ["start-dev", "--http-port=8080"]
+          ports:
+            - containerPort: 8080
+          env:
+            - name: KEYCLOAK_ADMIN
+              valueFrom: { secretKeyRef: { name: demo-secrets, key: KEYCLOAK_ADMIN } }
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              valueFrom: { secretKeyRef: { name: demo-secrets, key: KEYCLOAK_ADMIN_PASSWORD } }
+            - name: KC_HOSTNAME_STRICT
+              value: "false"
+            - name: KC_HTTP_ENABLED
+              value: "true"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tim
+  namespace: attachments-demo
+spec:
+  selector: { app: tim }
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
