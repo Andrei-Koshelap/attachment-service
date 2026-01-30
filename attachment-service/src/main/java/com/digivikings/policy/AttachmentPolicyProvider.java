@@ -123,9 +123,6 @@ public class AttachmentPolicyProvider implements DisposableBean {
         if (!enabled) return null;
 
         try {
-            // This constructor relies on standard env detection:
-            // - In cluster: service account token + https://kubernetes.default
-            // - Locally: KUBECONFIG / ~/.kube/config if present
             return new DefaultKubernetesClient();
         } catch (Exception e) {
             log.warn("Kubernetes client is not available; using default policy only. reason={}", e.toString());

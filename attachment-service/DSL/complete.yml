@@ -6,15 +6,14 @@ declaration:
   accepts: json
   returns: json
   namespace: attachments
-
-allowlist:
-  body:
-    - field: attachmentId
-      type: string
-    - field: parts
-      type: array
-    - field: checksumSha256
-      type: string
+  allowlist:
+    body:
+      - field: attachmentId
+        type: string
+      - field: parts
+        type: array
+      - field: checksumSha256
+        type: string
 
 loadMeta:
   call: http.get
@@ -57,10 +56,16 @@ triggerScan:
   next: returnOk
 
 returnOk:
-  return: { status: "SCAN_QUEUED" }
+  assign:
+    errorResponse:
+      error: "SCAN_QUEUED"
+  return: "${errorResponse}"
   next: end
 
 returnConflict:
   status: 409
-  return: { error: "INVALID_STATUS" }
+  assign:
+    errorResponse:
+      error: "INVALID_STATUS"
+  return: "${errorResponse}"
   next: end

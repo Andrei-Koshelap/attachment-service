@@ -1,0 +1,25 @@
+server:
+  port: 8080
+
+spring:
+  mail:
+    host: ${SMTP_HOST}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USER}
+    password: ${SMTP_PASS}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+app:
+  mail:
+    from: ${SMTP_FROM:no-reply@example.com}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

@@ -32,7 +32,7 @@ public class S3Config {
                 .credentialsProvider(creds)
                 .region(Region.of(region))
                 .endpointOverride(URI.create(endpoint)) // MinIO/Ceph
-                .forcePathStyle(true)                   //  MinIO
+                .forcePathStyle(true)          //  MinIO
                 .build();
     }
 

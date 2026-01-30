@@ -5,21 +5,18 @@ declaration:
   method: post
   accepts: json
   returns: json
-  namespace: attachments
+  namespace: analytics
+  allowlist:
+    body:
+      - field: filename
+        type: string
+      - field: contentType
+        type: string
+      - field: size
+        type: integer
+      - field: purpose
+        type: string
 
-# 1) Allowlist sisendile (minimeeri attack surface)
-allowlist:
-  body:
-    - field: filename
-      type: string
-    - field: contentType
-      type: string
-    - field: size
-      type: integer
-    - field: purpose
-      type: string
-
-# 2) Basic validation + flow-limits (kontseptuaalne; rate-limit võib tulla gateway konfiguratsioonist)
 validate:
   switch:
     - condition: "${incoming.body.size} > 104857600"   # 100MB
@@ -44,9 +41,13 @@ createMetadata:
 initMultipart:
   call: http.post
   args:
-    url: "${S3_FERRY_URL}/multipart/init"
+    url: "${ATTACHMENT_SERVICE_URL}/api/attachments/init"
+    headers:
+      Content-Type: "application/json"
+      Accept: "application/json"
+      Authorization: "${incoming.headers.Authorization}"
     body:
-      objectKey: "${meta.response.body.object_key}"
+      filename: "${incoming.body.filename}"
       contentType: "${incoming.body.contentType}"
       size: "${incoming.body.size}"
   result: s3
@@ -59,24 +60,35 @@ persistUploadId:
     body:
       id: "${meta.response.body.id}"
       uploadId: "${s3.response.body.uploadId}"
+  next: assignResponse
+
+assignResponse:
+  assign:
+    results:
+      attachmentId: "${meta.response.body.id}"
+      objectKey: "${meta.response.body.object_key}"
+      upload:
+        uploadId: "${s3.response.body.uploadId}"
+        partUrls: "${s3.response.body.partUrls}"
+        expiresInSeconds: "${s3.response.body.expiresIn}"
   next: returnInit
 
 returnInit:
-  return:
-    attachmentId: "${meta.response.body.id}"
-    objectKey: "${meta.response.body.object_key}"
-    upload:
-      uploadId: "${s3.response.body.uploadId}"
-      partUrls: "${s3.response.body.partUrls}"
-      expiresInSeconds: "${s3.response.body.expiresIn}"
+  return: '${results}'
   next: end
 
 returnTooLarge:
   status: 413
-  return: { error: "FILE_TOO_LARGE" }
+  assign:
+    errorResponse:
+      error: "FILE_TOO_LARGE"
+  return: "${errorResponse}"
   next: end
 
 returnUnsupported:
   status: 415
-  return: { error: "UNSUPPORTED_MEDIA_TYPE" }
+  assign:
+    errorResponse:
+      error: "UNSUPPORTED_MEDIA_TYPE"
+  return: "${errorResponse}"
   next: end

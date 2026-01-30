@@ -1,13 +1,13 @@
 # k8s-demo.yaml (ALL-IN-ONE)
 # Namespace: attachments-demo
-# Components: Postgres, MinIO (+ bucket init Job), ClamAV, TIM (Keycloak),
+# Components: Postgres, MinIO (+ bucket init Job), ClamAV, TIM ,
 #            mail-sender (+ SMTP Secret), Attachment Service, Ruuter (DSL gateway),
 #            CRD + CR: AttachmentPolicy
 #
 # Replace images:
 # - ruuter:dev
-# - ttachment-service:dev
-# - ymail-sender:dev
+# - attchment-service:dev
+# - mail-sender:dev
 
 ---
 apiVersion: v1

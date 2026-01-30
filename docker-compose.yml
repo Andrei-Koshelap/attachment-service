@@ -82,6 +82,7 @@ services:
       DB_URL: jdbc:postgresql://postgres:5432/app
       DB_USER: app
       DB_PASS: app
+      SERVER_PORT: "8080"
     ports:
       - "8083:8080"
 
@@ -99,6 +100,8 @@ services:
     environment:
       - TIM_URL=http://tim:8085
       - TIM_USERINFO_PATH=/jwt/custom-jwt-userinfo
+      - RESQL_URL=http://resql:8080
+      - ATTACHMENT_SERVICE_URL=http://attachment-service:8080
     volumes:
       - ./ruuter/conf:/app/conf:ro
       - ./dsl:/DSL:ro
