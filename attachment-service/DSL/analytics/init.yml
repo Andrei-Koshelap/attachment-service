@@ -28,11 +28,11 @@ validate:
 createMetadata:
   call: http.post
   args:
-    url: "${RESQL_URL}/attachments/create"
+    url: "[#ANALYTICS_RESQL]/add-attachment"
     body:
       filename: "${incoming.body.filename}"
-      declared_content_type: "${incoming.body.contentType}"
-      declared_size: "${incoming.body.size}"
+      content_type: "${incoming.body.contentType}"
+      size: "${incoming.body.size}"
       purpose: "${incoming.body.purpose}"
       status: "PENDING_UPLOAD"
   result: meta
@@ -41,7 +41,7 @@ createMetadata:
 initMultipart:
   call: http.post
   args:
-    url: "${ATTACHMENT_SERVICE_URL}/api/attachments/init"
+    url: "[#ATTACHMENT_SERVICE_URL]/api/attachments/init"
     headers:
       Content-Type: "application/json"
       Accept: "application/json"
@@ -56,7 +56,7 @@ initMultipart:
 persistUploadId:
   call: http.post
   args:
-    url: "${RESQL_URL}/attachments/set_upload"
+    url: "[#ANALYTICS_RESQL]/set-upload"
     body:
       id: "${meta.response.body.id}"
       uploadId: "${s3.response.body.uploadId}"

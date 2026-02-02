@@ -104,6 +104,7 @@ services:
       - ATTACHMENT_SERVICE_URL=http://attachment-service:8080
     volumes:
       - ./ruuter/conf:/app/conf:ro
+      - ./constants.ini:/app/constants.ini
       - ./dsl:/DSL:ro
 
   attachment-service:

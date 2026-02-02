@@ -5,7 +5,7 @@ declaration:
   method: post
   accepts: json
   returns: json
-  namespace: attachments
+  namespace: analytics
   allowlist:
     body:
       - field: attachmentId
@@ -16,10 +16,20 @@ declaration:
         type: string
 
 loadMeta:
-  call: http.get
+  call: http.post
   args:
-    url: "${RESQL_URL}/attachments/get?id=${incoming.body.attachmentId}"
+    url: "[#ANALYTICS_RESQL]/get-attachment"
+    body:
+      id: ${incoming.body.attachmentId}
   result: meta
+  next: guardExists
+
+guardExists:
+  switch:
+    - condition: "${meta.response.body == null}"
+      next: returnNotFound
+    - condition: "${meta.response.body.id == null}"
+      next: returnNotFound
   next: guardStatus
 
 guardStatus:
@@ -41,7 +51,7 @@ completeMultipart:
 markUploaded:
   call: http.post
   args:
-    url: "${RESQL_URL}/attachments/mark_uploaded"
+    url: "[#ANALYTICS_RESQL]/attachments/mark_uploaded"
     body:
       id: "${incoming.body.attachmentId}"
       checksumSha256: "${incoming.body.checksumSha256}"
@@ -67,5 +77,13 @@ returnConflict:
   assign:
     errorResponse:
       error: "INVALID_STATUS"
+  return: "${errorResponse}"
+  next: end
+
+returnNotFound:
+  status: 404
+  assign:
+    errorResponse:
+      error: "ATTACHMENT_NOT_FOUND"
   return: "${errorResponse}"
   next: end
